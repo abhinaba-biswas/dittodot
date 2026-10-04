@@ -89,7 +89,11 @@ export async function listFiles(dotId: string): Promise<FileEntry[]> {
 // ---------- browser & screen ----------
 
 // With full access on (macOS), the browser and screen are the user's real Mac; otherwise the dot's own computer.
-const onMac = () => repo.laptopFullAccess() && desktop.desktopSupported();
+export const onMac = () => repo.laptopFullAccess() && desktop.desktopSupported();
+
+// Keyboard control of the user's apps, for models that can't use the screen tool.
+export const pressKeys = desktop.pressKeys;
+export const typeKeys = desktop.typeKeys;
 
 export const openUrl = (dotId: string, url: string) => (onMac() ? desktop.openUrl(dotId, url) : isCloud(dotId) ? cloud.openUrl(dotId, url) : browser.openUrl(dotId, url));
 export const readPage = (dotId: string) => (onMac() ? desktop.readPage() : isCloud(dotId) ? cloud.readPage(dotId) : browser.readPage(dotId));

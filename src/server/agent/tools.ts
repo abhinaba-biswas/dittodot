@@ -157,6 +157,26 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "press_keys",
+    label: "On your computer",
+    description:
+      "Press a key or shortcut in an app on the USER's own Mac, e.g. \"cmd+k\", \"cmd+f\", \"enter\", \"escape\", \"down\". You can't see the screen, so drive apps with their keyboard shortcuts (quick switcher, search, tab). Returns the frontmost app and window title so you can check where you are.",
+    parameters: obj({ app: nullableStr("App to bring to the front first, e.g. \"Discord\"; null to use whatever is frontmost"), keys: str("Modifiers and one key joined by +, e.g. cmd+shift+p") }),
+    describe: (a) => `press ${s(a.keys)} in ${s(a.app) || "the frontmost app"} on the user's personal computer`,
+    defaultDecision: () => "allow",
+    execute: (a, ctx) => computer.pressKeys(ctx.dot.id, (a.app as string | null) || null, s(a.keys)),
+  },
+  {
+    name: "type_keys",
+    label: "On your computer",
+    description:
+      "Type text into whatever has keyboard focus in an app on the USER's own Mac (a search box, a message field). Put the focus in the right place with press_keys first. Set enter to press Enter afterwards (confirms a search, sends a message). Returns the frontmost app and window title.",
+    parameters: obj({ app: nullableStr("App to bring to the front first, e.g. \"Discord\"; null to use whatever is frontmost"), text: str("The text to type"), enter: { type: "boolean", description: "Press Enter after typing" } }),
+    describe: (a) => `type "${s(a.text).slice(0, 60)}" in ${s(a.app) || "the frontmost app"} on the user's personal computer`,
+    defaultDecision: () => "allow",
+    execute: (a, ctx) => computer.typeKeys(ctx.dot.id, (a.app as string | null) || null, s(a.text), Boolean(a.enter)),
+  },
+  {
     name: "remember",
     label: "Remembering",
     description: "Save a durable fact or preference about the user or their work to your memory, so you know it in future conversations.",
@@ -229,7 +249,8 @@ export const TOOLS: ToolDef[] = [
   {
     name: "message_dot",
     label: "Messaging another dot",
-    description: "Ask another of the user's dots for help or hand off a sub-task. Returns their reply.",
+    description:
+      "Ask another of the user's dots for their knowledge or advice. Returns their reply. They answer in text only and can't use tools or a computer during a hand-off, so never pass them hands-on work; do that yourself.",
     parameters: obj({ dot_name: str("The other dot's name"), message: str("Your message to them, with all needed context") }),
     describe: (a) => `message the dot "${s(a.dot_name)}"`,
     defaultDecision: () => "allow",
@@ -314,10 +335,16 @@ export function findTool(name: string): ToolDef | undefined {
   return TOOL_BY_NAME.get(name) ?? composioTools().find((t) => t.name === name);
 }
 
-export function toolsForDot(dot: Dot): ToolDef[] {
+const KEYBOARD_TOOLS = new Set(["press_keys", "type_keys"]);
+
+/** `seesScreen`: the model has the screen tool, so it clicks and types there instead of using the keyboard tools. */
+export function toolsForDot(dot: Dot, seesScreen = false): ToolDef[] {
   const signedIn = composio.signedIn();
+  const keyboard = computer.onMac() && !seesScreen;
   return [
-    ...TOOLS.filter((t) => (t.name !== "run_on_my_computer" || repo.canUseLaptop(dot)) && (t.name !== "app_connect" || signedIn)),
+    ...TOOLS.filter(
+      (t) => (t.name !== "run_on_my_computer" || repo.canUseLaptop(dot)) && (t.name !== "app_connect" || signedIn) && (!KEYBOARD_TOOLS.has(t.name) || keyboard),
+    ),
     ...(signedIn ? composioTools() : []),
   ];
 }

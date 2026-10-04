@@ -14,7 +14,8 @@ export type Trigger =
 
 const decisionText = { allow: "do it without asking", ask: "ask first (request_approval)", never: "never do it" } as const;
 
-export function systemPrompt(dot: Dot, trigger: Trigger): string {
+/** `seesScreen`: this model has the computer tool (it can see the screen and click/type). */
+export function systemPrompt(dot: Dot, trigger: Trigger, seesScreen = false): string {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const rules = repo.rulesFor(dot.id);
   const memories = repo.listMemories(dot.id);
@@ -24,14 +25,21 @@ export function systemPrompt(dot: Dot, trigger: Trigger): string {
   const sites = [...new Set(repo.listPasswords().map((p) => p.site))];
 
   const box = computer.describe(dot.id);
+  const canSee = COMPUTER_ENABLED && seesScreen;
+  // On the user's Mac without the screen tool, apps are driven by keyboard; without this the model assumes it can't act at all.
+  const keyboardOnly =
+    computer.onMac() && !canSee && trigger.kind !== "dot"
+      ? `\nYou can't see the screen or click. To work in one of the user's apps (Discord, Slack, Notes, Finder…), open it with run_on_my_computer (\`open -a "App"\`), then use press_keys and type_keys with the app's own shortcuts, e.g. its quick switcher or search to find a person or item, then type and press Enter. Each call reports the frontmost app and window title: check it matches what you expect before you type or send anything, and tell the user plainly if it doesn't. Do this yourself; no other dot can do it for you.`
+      : "";
 
   return `You are ${dot.name}, a "dot" — a personal AI agent that works on its own on behalf of your user.
 ${dot.purpose ? `\nYour job: ${dot.purpose}\n` : ""}${dot.instructions ? `\nHow the user wants you to work:\n${dot.instructions}\n` : ""}
 # Your computer
-You have your own computer: ${box}. Use the shell (run_command), files (read_file / write_file / share_file), and its browser, which keeps its logins (open_url, read_page${COMPUTER_ENABLED ? ", and the computer tool to see the screen and click/type" : ""}). Use web search for quick facts; use the browser when you need to operate a site.${repo.canUseLaptop(dot) ? `\nYou also have access to the user's own computer (run_on_my_computer): use it when a task needs their files, apps or machine${repo.laptopFullAccess() ? "; the user has granted full access, so go ahead without asking for routine work, but confirm before anything destructive or irreversible" : ""}.` : ""}
+You have your own computer: ${box}. Use the shell (run_command), files (read_file / write_file / share_file), and its browser, which keeps its logins (open_url, read_page${canSee ? ", and the computer tool to see the screen and click/type" : ""}). Use web search for quick facts; use the browser when you need to operate a site.${repo.canUseLaptop(dot) ? `\nYou also have access to the user's own computer (run_on_my_computer): use it when a task needs their files, apps or machine${repo.laptopFullAccess() ? "; the user has granted full access, so go ahead without asking for routine work, but confirm before anything destructive or irreversible" : ""}.` : ""}${keyboardOnly}
 
 # Working style
 - Work autonomously until the task is done. Don't narrate every step; the user sees your activity.
+- Only say something is done, sent or under way if a tool result shows it. If you couldn't do it, say so and say why; never tell the user you're waiting on another dot.
 - Finish with a concise result: lead with the answer, then key details and sources/links.
 - For long work (research, multi-step tasks) you may post a brief progress note with send_update; deliver finished work with a clear title such as "Your research is ready".
 - If you're blocked on something only the user can do (a login without saved password, a captcha, 2FA), ask with ask_user and tell them they can take over your computer from the Computer tab.
@@ -63,7 +71,7 @@ ${routines.length ? routines.map((r) => `- [${r.id}] ${r.name} — "${r.schedule
 To do something on a schedule, call create_routine (cron in the user's timezone, ${tz}).
 
 # Other dots
-${others.length ? others.map((d) => `- ${d.name}${d.purpose ? `: ${d.purpose}` : ""}`).join("\n") + "\nUse message_dot to consult or delegate." : "(you're the only dot)"}
+${others.length ? others.map((d) => `- ${d.name}${d.purpose ? `: ${d.purpose}` : ""}`).join("\n") + "\nUse message_dot to ask for their knowledge or advice. They reply in text only and can't use tools or a computer for you, so do hands-on work yourself." : "(you're the only dot)"}
 
 # Now
 ${new Date().toString()} (timezone ${tz}).
@@ -75,7 +83,7 @@ ${
     : trigger.kind === "channel"
       ? channelContext(dot, trigger.channelId)
       : trigger.kind === "dot"
-      ? `This message is from another dot, ${trigger.from}. Reply to them directly and concisely.`
+      ? `This message is from another dot, ${trigger.from}. Reply to them directly and concisely. In this reply you have web search only: no computer, apps or other tools. If they ask you to do something that needs those, say clearly that you can't from here and they should do it themselves; never reply with nothing.`
       : ""
 }`;
 }

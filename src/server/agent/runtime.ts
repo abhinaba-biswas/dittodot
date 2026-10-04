@@ -295,22 +295,23 @@ async function drive(dot: Dot, prevId: string | null, input: ResponseInputItem[]
 async function respond(dot: Dot, prevId: string | null, input: ResponseInputItem[], trigger: Trigger, signal: AbortSignal): Promise<Response> {
   const appModel = await modelFor(dot.model);
   const { client, model, stateless } = clientFor(appModel);
+  const seesScreen = !stateless && COMPUTER_ENABLED && supportsComputerTool(model);
   const tools: Tool[] = [
-    ...toolsForDot(dot).map((t): Tool => ({ type: "function", name: t.name, description: t.description, parameters: t.parameters, strict: !stateless && t.strict !== false })),
+    ...toolsForDot(dot, seesScreen).map((t): Tool => ({ type: "function", name: t.name, description: t.description, parameters: t.parameters, strict: !stateless && t.strict !== false })),
     // OpenRouter's server-side search: the model decides when to search, same as OpenAI's web_search.
     stateless ? ({ type: "openrouter:web_search" } as unknown as Tool) : { type: "web_search" },
   ];
-  if (!stateless && COMPUTER_ENABLED && supportsComputerTool(model)) tools.push({ type: "computer" } as Tool);
+  if (seesScreen) tools.push({ type: "computer" } as Tool);
 
   // Stateless providers get the whole conversation every time; the app keeps it (trimmed) per chat.
   const history = stateless ? (repo.getHistory(dot.id) as ResponseInputItem[]) : [];
   repo.setActivity(dot.id, "Thinking");
   const stream = await client.responses.create(
     stateless
-      ? { model, instructions: systemPrompt(dot, trigger), input: [...history, ...input], tools, parallel_tool_calls: false, store: false, stream: true }
+      ? { model, instructions: systemPrompt(dot, trigger, seesScreen), input: [...history, ...input], tools, parallel_tool_calls: false, store: false, stream: true }
       : {
           model,
-          instructions: systemPrompt(dot, trigger),
+          instructions: systemPrompt(dot, trigger, seesScreen),
           input,
           previous_response_id: prevId ?? undefined,
           tools,
@@ -554,6 +555,8 @@ setConsult(async (target, message, from, _depth, signal) => {
     const reply = res.output_text || "(no reply)";
     // In a channel the member answers in the channel (the user sees the team at work); otherwise in its own chat.
     repo.addMessage({ dotId: target.id, role: "dot", text: reply, from: `dot:${from.name}`, channelId });
+    // An empty answer must not read as "working on it": the caller would wait on a dot that isn't doing anything.
+    if (!res.output_text) return `${target.name} gave no answer and isn't working on this. Don't wait for them: do it yourself, or tell the user what's blocking you.`;
     return `${target.name} replied: ${reply}`;
   } finally {
     repo.setActivity(target.id, null);

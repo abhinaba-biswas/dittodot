@@ -32,7 +32,14 @@ const TRIGGER_APPS: Record<string, string> = {
 };
 
 
-const g = globalThis as unknown as { __dotsTriggerClient?: { key: string; client: Composio }; __dotsTriggerSub?: string | null };
+const g = globalThis as unknown as {
+  __dotsTriggerClient?: { key: string; client: Composio };
+  __dotsTriggerSub?: string | null;
+  __dotsTriggerRetry?: ReturnType<typeof setTimeout>;
+};
+
+// Waits between attempts to start listening (the network is often not up yet when the app launches at login).
+const RETRY_MS = [5_000, 30_000, 120_000, 600_000];
 
 function envKey(): string | null {
   return process.env.COMPOSIO_API_KEY || null;
@@ -172,19 +179,25 @@ function onEvent(e: Incoming) {
 }
 
 /** Listen for this install's trigger events (idempotent; call at boot and after the key changes). */
-export async function startEvents() {
+export async function startEvents(attempt = 0) {
   const key = apiKey();
   if (!key || g.__dotsTriggerSub === key) return;
   g.__dotsTriggerSub = key;
+  clearTimeout(g.__dotsTriggerRetry);
   try {
     await client().triggers.subscribe((e) => onEvent(e as Incoming), { userId: userId() }, (err) => console.warn("[dots] trigger subscription:", JSON.stringify(err).slice(0, 300)));
   } catch (err) {
     g.__dotsTriggerSub = null;
-    console.warn("[dots] couldn't listen for triggers:", err instanceof Error ? err.message : err);
+    const wait = RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)];
+    const cause = err instanceof Error && err.cause instanceof Error ? ` (${err.cause.message})` : "";
+    console.warn(`[dots] couldn't listen for triggers: ${err instanceof Error ? err.message : err}${cause}; trying again in ${wait / 1000}s`);
+    g.__dotsTriggerRetry = setTimeout(() => void startEvents(attempt + 1), wait);
+    g.__dotsTriggerRetry.unref?.();
   }
 }
 
 async function stopEvents() {
+  clearTimeout(g.__dotsTriggerRetry);
   if (!g.__dotsTriggerSub) return;
   g.__dotsTriggerSub = null;
   await g.__dotsTriggerClient?.client.triggers.unsubscribe().catch(() => {});
