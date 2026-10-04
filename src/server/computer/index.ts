@@ -4,6 +4,7 @@ import path from "node:path";
 import * as repo from "../repo";
 import * as cloud from "./cloud";
 import * as browser from "./browser";
+import * as desktop from "./desktop";
 import { BOX_IMAGE, dockerAvailable, resetDotComputer, resolveWorkspacePath, runOnDotComputer, workspaceDir } from "./shell";
 import type { ComputerAction } from "./browser";
 
@@ -33,6 +34,7 @@ export function modeFor(dotId: string): ComputerMode {
 const isCloud = (dotId: string) => modeFor(dotId) === "cloud";
 
 export function describe(dotId: string): string {
+  if (onMac()) return "the user's own Mac, with full access: their real screen, default browser (with their logins) and apps, plus a Linux workspace for scripts";
   switch (modeFor(dotId)) {
     case "cloud":
       return `a cloud Linux desktop (1280×800) with Google Chrome and a persistent ${cloud.WORKSPACE}; it keeps running while the user is away`;
@@ -86,15 +88,18 @@ export async function listFiles(dotId: string): Promise<FileEntry[]> {
 
 // ---------- browser & screen ----------
 
-export const openUrl = (dotId: string, url: string) => (isCloud(dotId) ? cloud.openUrl(dotId, url) : browser.openUrl(dotId, url));
-export const readPage = (dotId: string) => (isCloud(dotId) ? cloud.readPage(dotId) : browser.readPage(dotId));
-export const fillLogin = (dotId: string, u: string, p: string) => (isCloud(dotId) ? cloud.fillLogin(dotId, u, p) : browser.fillLogin(dotId, u, p));
-export const clickText = (dotId: string, text: string) => (isCloud(dotId) ? cloud.clickText(dotId, text) : browser.clickText(dotId, text));
+// With full access on (macOS), the browser and screen are the user's real Mac; otherwise the dot's own computer.
+const onMac = () => repo.laptopFullAccess() && desktop.desktopSupported();
+
+export const openUrl = (dotId: string, url: string) => (onMac() ? desktop.openUrl(dotId, url) : isCloud(dotId) ? cloud.openUrl(dotId, url) : browser.openUrl(dotId, url));
+export const readPage = (dotId: string) => (onMac() ? desktop.readPage() : isCloud(dotId) ? cloud.readPage(dotId) : browser.readPage(dotId));
+export const fillLogin = (dotId: string, u: string, p: string) => (onMac() ? desktop.fillLogin() : isCloud(dotId) ? cloud.fillLogin(dotId, u, p) : browser.fillLogin(dotId, u, p));
+export const clickText = (dotId: string, text: string) => (onMac() ? desktop.clickText(dotId, text) : isCloud(dotId) ? cloud.clickText(dotId, text) : browser.clickText(dotId, text));
 export const typeText = (dotId: string, field: string, value: string, submit: boolean) =>
-  isCloud(dotId) ? cloud.typeText(dotId, field, value, submit) : browser.typeText(dotId, field, value, submit);
-export const doAction = (dotId: string, a: ComputerAction) => (isCloud(dotId) ? cloud.doAction(dotId, a) : browser.doAction(dotId, a));
-export const screenshot = (dotId: string) => (isCloud(dotId) ? cloud.screenshot(dotId) : browser.screenshot(dotId));
-export const lastScreenshot = (dotId: string) => (isCloud(dotId) ? cloud.lastScreenshot(dotId) : browser.lastScreenshot(dotId));
+  onMac() ? desktop.typeText(dotId, field, value, submit) : isCloud(dotId) ? cloud.typeText(dotId, field, value, submit) : browser.typeText(dotId, field, value, submit);
+export const doAction = (dotId: string, a: ComputerAction) => (onMac() ? desktop.doAction(dotId, a) : isCloud(dotId) ? cloud.doAction(dotId, a) : browser.doAction(dotId, a));
+export const screenshot = (dotId: string) => (onMac() ? desktop.screenshot(dotId) : isCloud(dotId) ? cloud.screenshot(dotId) : browser.screenshot(dotId));
+export const lastScreenshot = (dotId: string) => (onMac() ? desktop.lastScreenshot(dotId) : isCloud(dotId) ? cloud.lastScreenshot(dotId) : browser.lastScreenshot(dotId));
 
 /** Live desktop stream (cloud only). */
 export async function liveUrl(dotId: string, interactive: boolean): Promise<string | null> {
@@ -110,7 +115,8 @@ export async function takeOver(dotId: string): Promise<string | null> {
 
 /** Start the dot's computer so the Computer tab can show it live (the cloud computer wakes via its live URL). */
 export async function wake(dotId: string) {
-  if (!isCloud(dotId)) await browser.wake(dotId);
+  // On the user's own Mac there is no separate browser to start.
+  if (!onMac() && !isCloud(dotId)) await browser.wake(dotId);
 }
 
 export async function handBack(dotId: string) {

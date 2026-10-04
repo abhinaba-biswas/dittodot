@@ -505,7 +505,7 @@ async function execComputer(
   return {
     type: "computer_call_output",
     call_id: call.call_id,
-    output: { type: "computer_screenshot", image_url: `data:image/png;base64,${shot.toString("base64")}` },
+    output: { type: "computer_screenshot", image_url: `data:image/${shot[0] === 0xff ? "jpeg" : "png"};base64,${shot.toString("base64")}` },
     acknowledged_safety_checks: ack.map((c) => ({ id: c.id, code: c.code, message: c.message })),
   };
 }

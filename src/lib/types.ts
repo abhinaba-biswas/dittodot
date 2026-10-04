@@ -156,6 +156,7 @@ export type ComputerInfo = {
   cloudKey: "env" | "settings" | null; // E2B key for cloud computers
   openRouter: "env" | "settings" | null; // OpenRouter key for open models
   triggersKey: "env" | "settings" | null; // Composio API key for triggers
+  laptopFullAccess: boolean; // all dots may work on this computer without asking for each command
   sky: boolean; // OpenAI's Sky computer-use runtime is installed on this Mac
   composio: boolean; // COMPOSIO_API_KEY is set
 };

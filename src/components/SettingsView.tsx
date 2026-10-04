@@ -3,7 +3,7 @@
 import { useState, useSyncExternalStore, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
 import { Bell, KeyRound, Lock, LogOut, Plus, RefreshCw } from "lucide-react";
-import { connectApp, deletePassword, refreshApps, savePassword, setCloudKey, setDefaultModel, setOpenAIKey, setOpenRouterKey, signInComposio, signOutComposio } from "@/app/actions";
+import { connectApp, setLaptopFullAccess, deletePassword, refreshApps, savePassword, setCloudKey, setDefaultModel, setOpenAIKey, setOpenRouterKey, signInComposio, signOutComposio } from "@/app/actions";
 import { useStore } from "@/lib/store";
 import { openAfter } from "@/lib/popup";
 import { Empty, PageHeader, RemoveButton, RuleEditor, Section } from "./SettingsKit";
@@ -124,6 +124,7 @@ export default function SettingsView() {
         <Section eyebrow="Engine" title="Models & computers" description="Models come from what your OpenAI key can use, plus open models once you add an OpenRouter key.">
           <ApiKey />
           <OpenModelsKey />
+          <LaptopAccess />
           <CloudKey />
           <div className="surface mb-3 flex items-center gap-3 p-4">
             <div className="flex-1">
@@ -419,6 +420,36 @@ function OpenModelsKey() {
         </form>
       )}
       {error && <p className="mt-2 text-caption text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+/** One switch that lets every dot work on this whole computer. */
+function LaptopAccess() {
+  const on = useStore((s) => s.computer.laptopFullAccess);
+  const [pending, start] = useTransition();
+  return (
+    <div className="surface mb-3 p-4">
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <div className="text-[14px]">Full access to this Mac</div>
+          <div className="text-body-sm text-foreground/55">
+            {on
+              ? "Every dot can run commands and read or change files anywhere on this Mac without asking each time. Destructive commands (sudo, deleting your home folder, formatting disks) still ask first."
+              : "Let all your dots work on this Mac: your files, apps and terminal. Off by default; you can also allow it per dot."}
+          </div>
+        </div>
+        <button
+          role="switch"
+          aria-checked={on}
+          aria-label="Full access to this Mac"
+          disabled={pending}
+          onClick={() => start(() => setLaptopFullAccess(!on))}
+          className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${on ? "bg-brand" : "bg-black/15"}`}
+        >
+          <span className={`absolute top-0.5 size-4 rounded-full bg-card shadow-sm transition-[left] ${on ? "left-[18px]" : "left-0.5"}`} />
+        </button>
+      </div>
     </div>
   );
 }

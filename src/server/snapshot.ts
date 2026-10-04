@@ -25,6 +25,7 @@ export function computerInfo(): ComputerInfo {
     cloudKey: cloudKeySource(),
     openRouter: openRouterSource(),
     triggersKey: triggersKeySource(),
+    laptopFullAccess: repo.laptopFullAccess(),
     sky: skyInstalled(),
     composio: signedIn(),
   };

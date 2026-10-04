@@ -47,6 +47,9 @@ export function setConsult(fn: typeof consultImpl) {
   consultImpl = fn;
 }
 
+// Commands that can wreck the machine; these still ask even with full laptop access.
+const DESTRUCTIVE = /\bsudo\b|\brm\s+(-\w+\s+)*(\/|~|\$HOME)(\s|\/?$)|\bmkfs\b|\bdd\s+if=|\bdiskutil\s+(erase|partition|secure)|:\(\)\s*\{|>\s*\/dev\/(r?disk|sd)|\b(shutdown|reboot|halt)\b|\bchmod\s+-R\s+\d+\s+\//i;
+
 export const TOOLS: ToolDef[] = [
   {
     name: "run_command",
@@ -144,9 +147,11 @@ export const TOOLS: ToolDef[] = [
     description: "Run a bash command on the USER's own computer (their Mac). Only use when the task truly needs their machine; prefer your own computer.",
     parameters: obj({ command: str("The bash command to run on the user's computer") }),
     describe: (a) => `run \`${s(a.command)}\` on the user's personal computer`,
-    defaultDecision: () => "ask",
+    // With full access on, only clearly destructive commands still ask.
+    defaultDecision: (_c, a) => (repo.laptopFullAccess() && !DESTRUCTIVE.test(s(a.command)) ? "allow" : "ask"),
     execute: async (a, ctx) => {
-      if (!repo.getDot(ctx.dot.id)?.localAccess)
+      const dot = repo.getDot(ctx.dot.id);
+      if (!dot || !repo.canUseLaptop(dot))
         return "You no longer have access to the user's computer. They can allow access again from this dot's settings on that computer.";
       return runOnUserComputer(s(a.command), ctx.signal);
     },
@@ -312,7 +317,7 @@ export function findTool(name: string): ToolDef | undefined {
 export function toolsForDot(dot: Dot): ToolDef[] {
   const signedIn = composio.signedIn();
   return [
-    ...TOOLS.filter((t) => (t.name !== "run_on_my_computer" || dot.localAccess) && (t.name !== "app_connect" || signedIn)),
+    ...TOOLS.filter((t) => (t.name !== "run_on_my_computer" || repo.canUseLaptop(dot)) && (t.name !== "app_connect" || signedIn)),
     ...(signedIn ? composioTools() : []),
   ];
 }

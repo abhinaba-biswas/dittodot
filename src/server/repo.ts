@@ -1,11 +1,17 @@
 import "server-only";
 import { db, getSetting, id, setSetting } from "./db";
+
 import { emit } from "./bus";
 import { Cron } from "croner";
 import { normalizeLook } from "@/lib/look";
 import type {
   AppTrigger, Attachment, CardData, Channel, Conversation, Dot, DotStatus, Look, Memory, Message, MessageRole, PasswordEntry, Routine, Rule, RuleDecision, Skill,
 } from "@/lib/types";
+
+/** Global switch (Settings): every dot may use this computer, without asking for each command. */
+export const laptopFullAccess = () => getSetting("laptop_full_access") === "1";
+/** May this dot work on the user's own computer? Either it was allowed individually, or full access is on. */
+export const canUseLaptop = (dot: Pick<Dot, "localAccess">) => laptopFullAccess() || dot.localAccess;
 
 type Row = Record<string, unknown>;
 const now = () => Date.now();

@@ -92,6 +92,12 @@ export async function setLocalAccess(dotId: string, allowed: boolean) {
     });
 }
 
+/** Settings: give every dot access to this whole computer (no per-command prompts, except destructive ones). */
+export async function setLaptopFullAccess(on: boolean) {
+  setSetting("laptop_full_access", on ? "1" : null);
+  emit({ type: "computer", data: computerInfo() });
+}
+
 export async function addRule(dotId: string | null, action: string, decision: RuleDecision) {
   if (action.trim()) repo.addRule({ dotId, action: action.trim(), decision });
 }
