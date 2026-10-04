@@ -1,5 +1,5 @@
 import { spawn, type Subprocess } from "bun";
-import { ApplicationMenu, BrowserWindow, GlobalShortcut, type ApplicationMenuItem } from "electrobun/main";
+import Electrobun, { ApplicationMenu, BrowserWindow, GlobalShortcut, type ApplicationMenuItem } from "electrobun/main";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -34,18 +34,76 @@ process.env.DOTS_DATA_DIR = DATA_DIR;
 
 let serverProcess: Subprocess | null = null;
 
+// Records the server we spawned, so a later launch can reap it if this process dies without cleaning up.
+const SERVER_PID_FILE = path.join(DATA_DIR, "server.pid");
+
+/** Resolves true when something accepts TCP connections on the port. */
+function isPortListening(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host: "127.0.0.1" });
+    const done = (listening: boolean) => {
+      socket.destroy();
+      resolve(listening);
+    };
+    socket.setTimeout(1000, () => done(false));
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+  });
+}
+
 /**
  * Checks if a port is available on localhost
  */
-export function isPortAvailable(port: number): Promise<boolean> {
+export async function isPortAvailable(port: number): Promise<boolean> {
+  // Binding 127.0.0.1 alone succeeds on macOS even when another server holds the wildcard address,
+  // so ask whether anything answers first, then bind the wildcard address the server itself would use.
+  if (await isPortListening(port)) return false;
   return new Promise((resolve) => {
     const server = net.createServer();
     server.once("error", () => resolve(false));
     server.once("listening", () => {
       server.close(() => resolve(true));
     });
-    server.listen(port, "127.0.0.1");
+    server.listen(port, "0.0.0.0");
   });
+}
+
+/** Stops a server left behind by a previous launch that exited without cleaning up. */
+async function reapStaleServer(): Promise<void> {
+  let pid: number;
+  try {
+    pid = Number(fs.readFileSync(SERVER_PID_FILE, "utf8").trim());
+  } catch {
+    return;
+  }
+  fs.rmSync(SERVER_PID_FILE, { force: true });
+  if (!Number.isInteger(pid) || pid <= 1 || process.platform === "win32") return;
+  try {
+    // The pid may have been reused by an unrelated process since, so only kill a Next.js server.
+    const ps = spawn({ cmd: ["ps", "-o", "command=", "-p", String(pid)], stdout: "pipe", stderr: "ignore" });
+    const command = await new Response(ps.stdout).text();
+    if (!/next/i.test(command)) return;
+    console.log(`[Desktop-Host] Stopping leftover server from a previous launch (pid ${pid})`);
+    process.kill(pid, "SIGTERM");
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      process.kill(pid, 0);
+    }
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Already gone
+  }
+}
+
+function stopServer() {
+  if (!serverProcess) return;
+  try {
+    serverProcess.kill();
+  } catch {
+    // Ignored
+  }
+  serverProcess = null;
+  fs.rmSync(SERVER_PID_FILE, { force: true });
 }
 
 /**
@@ -90,6 +148,8 @@ export async function startNextServer(preferredPort = 3100): Promise<{ url: stri
   const projectRoot = findProjectRoot();
   const standaloneServer = path.join(projectRoot, ".next", "standalone", "server.js");
 
+  await reapStaleServer();
+
   // Check if port is already running our server
   const portFree = await isPortAvailable(preferredPort);
   let activePort = preferredPort;
@@ -118,7 +178,8 @@ export async function startNextServer(preferredPort = 3100): Promise<{ url: stri
       env: {
         ...process.env,
         PORT: String(activePort),
-        HOST: "127.0.0.1",
+        // The standalone server reads HOSTNAME (not HOST) for its bind address.
+        HOSTNAME: "127.0.0.1",
         NODE_ENV: "production",
         DOTS_DATA_DIR: DATA_DIR,
         NEXT_PUBLIC_DESKTOP: "true",
@@ -144,6 +205,8 @@ export async function startNextServer(preferredPort = 3100): Promise<{ url: stri
       stderr: "inherit",
     });
   }
+
+  fs.writeFileSync(SERVER_PID_FILE, String(serverProcess.pid));
 
   // Wait for server health check
   await waitForServer(`${serverUrl}/api/events`);
@@ -213,15 +276,12 @@ function cleanupAndExit(code = 0) {
   } catch {
     // Ignored
   }
-  if (serverProcess) {
-    try {
-      serverProcess.kill();
-    } catch {
-      // Ignored
-    }
-  }
+  stopServer();
   process.exit(code);
 }
+
+// Cmd+Q and the Quit menu item shut down natively and may not reach the handlers below.
+Electrobun.events.on("before-quit", stopServer);
 
 // Attach process termination handlers
 process.on("SIGINT", () => cleanupAndExit(0));

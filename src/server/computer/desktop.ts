@@ -172,6 +172,72 @@ async function keypress(keys: string[]) {
   await exec("osascript", ["-e", "on run argv", "-e", `tell application "System Events" to ${body}`, "-e", "end run", "--", main.length === 1 ? main : ""]);
 }
 
+// ---------- apps by keyboard ----------
+// For models without the screen tool: they can't see or click, but they can drive an app with its shortcuts.
+
+const ACCESS_HINT = "Allow Ditto under System Settings → Privacy & Security → Accessibility, then try again.";
+
+/** The frontmost app and its window title, so a model that can't see the screen knows where its keys landed. */
+async function frontWindow(): Promise<string> {
+  const out = await exec("osascript", [
+    "-e", 'tell application "System Events"',
+    "-e", "set p to first application process whose frontmost is true",
+    "-e", "set n to name of p",
+    "-e", "try",
+    "-e", "set w to name of front window of p",
+    "-e", "on error",
+    "-e", 'set w to ""',
+    "-e", "end try",
+    "-e", "end tell",
+    "-e", "return n & linefeed & w",
+  ]).catch(() => "");
+  const [app, title] = out.trim().split("\n");
+  return app ? `Frontmost app: ${app}${title ? `, window "${title}"` : ""}.` : "";
+}
+
+/** Bring an app to the front (launching it if needed) so the keys go to it. */
+async function focusApp(app: string | null) {
+  if (!app) return;
+  await exec("open", ["-a", app]).catch(() => {
+    throw new Error(`No app named "${app}" on this Mac.`);
+  });
+  await sleep(1200);
+}
+
+async function afterKeys(dotId: string, did: string): Promise<string> {
+  await sleep(700);
+  await screenshot(dotId).catch(() => {});
+  return [did, await frontWindow()].filter(Boolean).join(" ");
+}
+
+export async function pressKeys(dotId: string, app: string | null, combo: string): Promise<string> {
+  const keys = combo.split("+").map((k) => k.trim()).filter(Boolean);
+  const main = keys.find((k) => !MODS[k.toUpperCase()]);
+  if (!main || (main.length > 1 && KEY_CODES[main.toUpperCase()] === undefined))
+    return `Can't press "${combo}". Use modifiers (cmd, ctrl, alt, shift) plus one character or one of: ${Object.keys(KEY_CODES).join(", ").toLowerCase()}.`;
+  await focusApp(app);
+  try {
+    await keypress(keys);
+  } catch (err) {
+    throw new Error(`Couldn't press keys (${err instanceof Error ? err.message : String(err)}). ${ACCESS_HINT}`);
+  }
+  return afterKeys(dotId, `Pressed ${keys.join("+")}.`);
+}
+
+export async function typeKeys(dotId: string, app: string | null, text: string, enter: boolean): Promise<string> {
+  await focusApp(app);
+  try {
+    await exec("osascript", ["-e", "on run argv", "-e", 'tell application "System Events" to keystroke (item 1 of argv)', "-e", "end run", "--", text]);
+    if (enter) {
+      await sleep(250);
+      await keypress(["return"]);
+    }
+  } catch (err) {
+    throw new Error(`Couldn't type (${err instanceof Error ? err.message : String(err)}). ${ACCESS_HINT}`);
+  }
+  return afterKeys(dotId, enter ? "Typed the text and pressed Enter." : "Typed the text.");
+}
+
 export async function doAction(_dotId: string, action: ComputerAction): Promise<void> {
   switch (action.type) {
     case "click": {
