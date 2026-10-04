@@ -106,4 +106,11 @@ declare module "electrobun/main" {
     unregisterAll(): void;
     isRegistered(accelerator: string): boolean;
   };
+
+  const Electrobun: {
+    events: {
+      on(name: "before-quit", handler: (event: unknown) => void): void;
+    };
+  };
+  export default Electrobun;
 }
