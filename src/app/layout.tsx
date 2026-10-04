@@ -25,7 +25,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Suspense>
           <Sidebar />
         </Suspense>
-        <main className="flex min-w-0 flex-1 flex-col bg-card">
+        <main className="relative flex min-w-0 flex-1 flex-col bg-card">
+          {/* Desktop (macOS): a slim drag strip along the top edge so the whole window can be moved and double-clicked to zoom. */}
+          <div aria-hidden className="desktop-drag electrobun-webkit-app-region-drag absolute inset-x-0 top-0 z-30 hidden h-3 [.desktop-mac_&]:block" />
           <Suspense>
             <MobileBar />
           </Suspense>

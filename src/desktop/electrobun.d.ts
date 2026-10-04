@@ -80,8 +80,30 @@ declare module "electrobun/main" {
 
   export class BrowserWindow {
     constructor(options?: WindowOptionsType);
+    webview: {
+      on(name: string, handler: (event: { data?: { detail?: unknown } }) => void): void;
+      executeJavascript(js: string): void;
+    };
     close(): void;
     setTitle(title: string): void;
     loadURL(url: string): void;
+    show(): void;
+    focus(): void;
+    minimize(): void;
+    unminimize(): void;
+    isMinimized(): boolean;
+    maximize(): void;
+    unmaximize(): void;
+    isMaximized(): boolean;
+    setFullScreen(fullScreen: boolean): void;
+    isFullScreen(): boolean;
+    setAlwaysOnTop(alwaysOnTop: boolean): void;
   }
+
+  export const GlobalShortcut: {
+    register(accelerator: string, callback: () => void): boolean;
+    unregister(accelerator: string): boolean;
+    unregisterAll(): void;
+    isRegistered(accelerator: string): boolean;
+  };
 }

@@ -1,5 +1,5 @@
 import { spawn, type Subprocess } from "bun";
-import { ApplicationMenu, BrowserWindow, type ApplicationMenuItem } from "electrobun/main";
+import { ApplicationMenu, BrowserWindow, GlobalShortcut, type ApplicationMenuItem } from "electrobun/main";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -208,6 +208,11 @@ export async function handleRPC(rawMessage: string): Promise<string> {
 
 function cleanupAndExit(code = 0) {
   console.log("[Desktop-Host] Shutting down application...");
+  try {
+    GlobalShortcut.unregisterAll();
+  } catch {
+    // Ignored
+  }
   if (serverProcess) {
     try {
       serverProcess.kill();
@@ -278,6 +283,45 @@ function installAppMenu() {
   }
 }
 
+/** Double-clicking the title area zooms (maximizes) the window, like any native Mac app. */
+function toggleMaximize(win: BrowserWindow) {
+  if (win.isFullScreen()) return win.setFullScreen(false);
+  if (win.isMaximized()) win.unmaximize();
+  else win.maximize();
+}
+
+/** Starts or ends a voice call in the page, bringing the window forward first. */
+const VOICE_HOTKEY = "CommandOrControl+Shift+Space";
+
+function wireWindow(win: BrowserWindow) {
+  // The page reports gestures it can't handle itself (WKWebView has no native titlebar double-click here).
+  win.webview.on("host-message", (event) => {
+    let msg: unknown = event.data?.detail;
+    if (typeof msg === "string") {
+      try {
+        msg = JSON.parse(msg);
+      } catch {
+        return;
+      }
+    }
+    if ((msg as { type?: string } | null)?.type === "window:toggleMaximize") toggleMaximize(win);
+  });
+
+  // A system-wide shortcut works while Ditto is in the background; the page falls back to its own key handler if it fails.
+  const ok = GlobalShortcut.register(VOICE_HOTKEY, () => {
+    if (win.isMinimized()) win.unminimize();
+    win.show();
+    win.focus();
+    win.webview.executeJavascript("window.dispatchEvent(new CustomEvent('ditto:voice-toggle'))");
+  });
+  if (ok) win.webview.executeJavascript("window.__dittoGlobalHotkey = true");
+  else console.warn(`[Desktop-Host] Could not register global shortcut ${VOICE_HOTKEY}`);
+  // The flag is lost on reload/navigation, so set it again once the page is ready.
+  win.webview.on("dom-ready", () => {
+    if (ok) win.webview.executeJavascript("window.__dittoGlobalHotkey = true");
+  });
+}
+
 // Desktop Launcher main entry
 export async function main() {
   console.log("[Desktop-Host] Launching Ditto Desktop App...");
@@ -302,6 +346,7 @@ export async function main() {
       titleBarStyle: "hiddenInset",
       spellCheck: true,
     });
+    wireWindow(win);
     console.log("[Desktop-Host] Native BrowserWindow opened successfully.");
   } catch (err) {
     console.warn("[Desktop-Host] Note on BrowserWindow instantiation:", err);

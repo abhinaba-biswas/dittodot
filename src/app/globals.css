@@ -81,6 +81,21 @@ html.desktop-mac .prose {
   -webkit-user-select: text;
   user-select: text;
 }
+/* Native-feeling controls and scrollbars on the Mac app. */
+html.desktop-mac button,
+html.desktop-mac [role="button"],
+html.desktop-mac a {
+  cursor: default;
+  -webkit-user-drag: none;
+}
+html.desktop-mac * {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(0 0 0 / 0.2) transparent;
+}
+html.desktop-mac {
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
+}
 /* Electrobun's window-drag handle; interactive children opt out. */
 .desktop-drag {
   -webkit-app-region: drag;

@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, use, useMemo, useState, useTransition } from "react";
+import { Suspense, use, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AppWindow, ArrowRight, ArrowUp, AudioLines, Plus, Brain, Download, ExternalLink, FileText, Paperclip, Plug, Check, Clock, Globe, KeyRound, Laptop, MessageSquare, MonitorSmartphone, Search, ShieldAlert, Sparkles, Terminal, X } from "lucide-react";
 import { confirmConnectCard, resolveCard, resumeDot, sendMessage, startConversation, startVoiceConversation } from "@/app/actions";
 import { mergeMessages, useStore } from "@/lib/store";
-import { startCall } from "@/lib/voiceCall";
+import { endCall, getCall, startCall } from "@/lib/voiceCall";
+import { VOICE_TOGGLE_EVENT } from "./DesktopShell";
 import Dot3DLazy from "./Dot3DLazy";
 import DotOrb from "./DotOrb";
 import type { Attachment, Dot, Message } from "@/lib/types";
@@ -70,6 +71,17 @@ export default function Chat({ dot, conversation }: { dot: Dot; conversation?: s
     if (!convId) router.replace(`/dots/${dot.id}?c=${id}`);
     void startCall(dot.id, id);
   };
+
+  // Voice hotkey: ends a call in progress, otherwise starts one in this chat.
+  const voiceRef = useRef(voice);
+  useEffect(() => {
+    voiceRef.current = voice;
+  });
+  useEffect(() => {
+    const toggle = () => (getCall() ? endCall() : void voiceRef.current());
+    window.addEventListener(VOICE_TOGGLE_EVENT, toggle);
+    return () => window.removeEventListener(VOICE_TOGGLE_EVENT, toggle);
+  }, []);
 
   return (
     <div className="flex min-h-0 flex-1">
